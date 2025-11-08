@@ -1,0 +1,173 @@
+# Prompt Library for Dynamic Classification
+# This configuration enables dynamic prompt tree generation
+
+# Base System Prompt
+system_prompt: |
+  You are an expert document classification assistant specializing in regulatory compliance
+  and data sensitivity analysis. Your task is to analyze documents and classify them into
+  one of the following categories: Public, Confidential, Highly Sensitive, or Unsafe.
+
+  You must provide detailed reasoning and cite specific evidence from the document.
+
+# Category Definitions
+categories:
+  Public:
+    description: "Marketing materials, product brochures, public website content, generic images"
+    keywords:
+      - marketing
+      - brochure
+      - public website
+      - press release
+      - advertisement
+      - promotional
+    indicators:
+      - No PII present
+      - Publicly available information
+      - Marketing language
+      - General product information
+
+  Confidential:
+    description: "Internal communications, business documents, customer details, non-public operational content"
+    keywords:
+      - internal memo
+      - business plan
+      - customer list
+      - operational details
+      - internal only
+      - confidential
+    indicators:
+      - Internal business information
+      - Customer names and addresses (not SSN/financial)
+      - Operational procedures
+      - Non-public strategies
+
+  "Highly Sensitive":
+    description: "PII like SSNs, account/credit card numbers, proprietary schematics, defense designs"
+    keywords:
+      - SSN
+      - social security
+      - credit card
+      - account number
+      - proprietary
+      - classified
+      - defense
+      - military
+      - schematic
+    indicators:
+      - Social Security Numbers
+      - Financial account numbers
+      - Credit card information
+      - Defense/military schematics
+      - Proprietary technical designs
+
+  Unsafe:
+    description: "Content violating child safety, hate speech, violence, criminal activity, or cyber threats"
+    keywords:
+      - violence
+      - hate speech
+      - child exploitation
+      - criminal
+      - terrorism
+      - cyber threat
+      - malware
+    indicators:
+      - Child safety violations
+      - Hate speech or discriminatory content
+      - Violent or exploitative content
+      - Criminal instructions
+      - Cyber attack methodologies
+
+# Classification Prompts
+classification_prompts:
+  initial_analysis: |
+    Analyze the following document and provide:
+    1. Document type identification
+    2. Content summary
+    3. Initial sensitivity assessment
+    4. Key elements that need detailed examination
+
+  content_extraction: |
+    Extract and analyze the following from the document:
+    - All text content from each page
+    - Image descriptions and analysis
+    - Any forms or structured data
+    - Metadata and document properties
+
+  pii_detection: |
+    Scan the document for Personally Identifiable Information (PII):
+    - Social Security Numbers (format: XXX-XX-XXXX)
+    - Credit card numbers
+    - Bank account numbers
+    - Driver's license numbers
+    - Passport numbers
+    - Email addresses (in sensitive contexts)
+    - Phone numbers (in sensitive contexts)
+    - Full names with SSN or financial data
+
+  content_safety: |
+    Evaluate the document for unsafe content:
+    - Child safety violations
+    - Hate speech or discriminatory language
+    - Violent or graphic content
+    - Exploitative material
+    - Criminal activity descriptions
+    - Political misinformation
+    - Cyber threat content (malware, hacking guides, etc.)
+
+  proprietary_analysis: |
+    Analyze for proprietary or classified information:
+    - Technical schematics or blueprints
+    - Defense or military equipment designs
+    - Trade secrets or proprietary formulas
+    - Classified markings or indicators
+    - Next-generation product designs
+
+  final_classification: |
+    Based on all previous analyses, provide:
+    1. Primary classification category
+    2. Confidence score (0-1)
+    3. Detailed reasoning
+    4. Summary of findings
+    5. Citation evidence with page/image references
+    6. Any secondary categories if applicable
+
+# Citation Template
+citation_template: |
+  For each piece of evidence, provide:
+  - Page number or image number
+  - Specific text excerpt or image region description
+  - Relevance explanation
+  - Category support (which category this evidence supports)
+
+# Confidence Scoring
+confidence_rules:
+  high_confidence: 0.85  # Clear indicators, strong evidence
+  medium_confidence: 0.70  # Some indicators, moderate evidence
+  low_confidence: 0.50  # Weak indicators, requires human review
+
+# HITL Triggers
+hitl_triggers:
+  - condition: "confidence_score < 0.70"
+    reason: "Low confidence score requires human verification"
+  - condition: "multiple_categories_detected"
+    reason: "Document spans multiple sensitivity levels"
+  - condition: "pii_detected AND public_indicators"
+    reason: "Conflicting signals - PII in potentially public document"
+  - condition: "safety_flags_present"
+    reason: "Content safety concerns require human review"
+
+# Dual Verification Prompts
+dual_verification:
+  cross_check_prompt: |
+    Review the classification provided by the primary model:
+    - Category: {primary_category}
+    - Confidence: {primary_confidence}
+    - Reasoning: {primary_reasoning}
+
+    Independently analyze the document and provide your classification.
+    Note any disagreements and explain your reasoning.
+
+  consensus_rules:
+    - agreement_threshold: 0.90
+    - disagreement_action: "trigger_hitl"
+    - partial_agreement: "use_higher_sensitivity"
