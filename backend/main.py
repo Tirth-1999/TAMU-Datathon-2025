@@ -4,7 +4,7 @@ Regulatory Document Classifier API
 """
 from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -13,6 +13,7 @@ import os
 import shutil
 from datetime import datetime
 from loguru import logger
+from pathlib import Path
 
 from backend.config import settings
 from backend.database import init_db, get_db
@@ -44,6 +45,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Mount static files for frontend
+frontend_path = Path(__file__).parent.parent / "frontend" / "public"
+if frontend_path.exists():
+    app.mount("/static", StaticFiles(directory=str(frontend_path)), name="static")
+
 # Initialize database
 @app.on_event("startup")
 async def startup_event():
@@ -52,10 +58,19 @@ async def startup_event():
     init_db()
     logger.info("Database initialized")
 
-# Health check
-@app.get("/")
-async def root():
-    """Root endpoint"""
+# Serve frontend UI
+@app.get("/", response_class=HTMLResponse)
+async def serve_frontend():
+    """Serve the frontend UI"""
+    frontend_file = Path(__file__).parent.parent / "frontend" / "public" / "index.html"
+    if frontend_file.exists():
+        return FileResponse(frontend_file)
+    return {"message": "Frontend not found. Visit /docs for API documentation"}
+
+# API Status endpoint
+@app.get("/api")
+async def api_root():
+    """API root endpoint"""
     return {
         "name": settings.APP_NAME,
         "version": settings.APP_VERSION,
@@ -270,13 +285,51 @@ async def classify_document_endpoint(
     except Exception as e:
         logger.error(f"Classification failed: {e}")
 
+        # Categorize the error for better user feedback
+        error_type = "unknown_error"
+        error_detail = str(e)
+        user_message = "Classification failed"
+
+        if "401" in str(e) or "authentication" in str(e).lower():
+            error_type = "authentication_error"
+            user_message = "Invalid API Key"
+            error_detail = "The Anthropic API key is invalid or expired. Please update your API key in the .env file."
+        elif "429" in str(e) or "rate_limit" in str(e).lower():
+            error_type = "rate_limit_error"
+            user_message = "API Rate Limit Exceeded"
+            error_detail = "Too many requests. Please wait a moment and try again."
+        elif "402" in str(e) or "insufficient" in str(e).lower() or "quota" in str(e).lower():
+            error_type = "quota_error"
+            user_message = "API Credits Exhausted"
+            error_detail = "Your Anthropic API credits have been exhausted. Please add credits to your account."
+        elif "timeout" in str(e).lower() or "timed out" in str(e).lower():
+            error_type = "timeout_error"
+            user_message = "Request Timeout"
+            error_detail = "The classification request took too long. Please try again."
+        elif "connection" in str(e).lower() or "network" in str(e).lower():
+            error_type = "network_error"
+            user_message = "Network Error"
+            error_detail = "Unable to connect to the API. Please check your internet connection."
+        elif "pii_results" in str(e):
+            error_type = "processing_error"
+            user_message = "Classification Processing Error"
+            error_detail = "The document was processed but classification results are incomplete. This may be due to API issues."
+
         # Update document status
         if 'doc' in locals():
             doc.status = DocumentStatus.FAILED
-            doc.error_message = str(e)
+            doc.error_message = f"{error_type}: {error_detail}"
             db.commit()
 
-        raise HTTPException(status_code=500, detail=f"Classification failed: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": user_message,
+                "error_type": error_type,
+                "error_detail": error_detail,
+                "technical_error": str(e)
+            }
+        )
 
 def classify_document_background(document_id: int, file_path: str, db: Session):
     """Background task for document classification"""
