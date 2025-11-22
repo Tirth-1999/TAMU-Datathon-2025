@@ -23,7 +23,7 @@ class AuditLog(Base):
 
     # Details
     description = Column(Text, nullable=False)
-    metadata = Column(JSON, nullable=True)
+    meta_data = Column(JSON, nullable=True)
 
     # Status
     success = Column(Text, default=True)
